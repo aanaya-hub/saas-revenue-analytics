@@ -22,9 +22,9 @@ Dash · SQLite · matplotlib · seaborn
 | 5 | Clustering — KMeans, DBSCAN, HDBSCAN, PCA, t-SNE, UMAP | `analysis.py` | **complete** |
 | 6 | Interactive dashboard | `dashboard.py` | **complete** |
 | 7 | Orchestration | `main.py` | **complete** |
-| 8 | Deployment to a free host | — | not started |
+| 8 | Deployment to Vercel | `vercel.json`, `api/index.py` | **prepared — first deploy pending** |
 
-**Current state: steps 1–7 of 8.** The pipeline runs end to end, produces **22 figures** and a single
+**Current state: steps 1–7 complete, step 8 prepared.** The pipeline runs end to end, produces **22 figures** and a single
 `reports/results.json`, and passes **32 tests**. The dashboard runs locally; nothing is deployed yet and
 nothing has been pushed.
 
@@ -340,6 +340,10 @@ specific to one operating system, and fully reproducible from `requirements.txt`
 
 ```
 saas-revenue-analytics/
+├── api/index.py                 Vercel entry point — exposes the WSGI app
+├── vercel.json                  routing and which files the function carries
+├── requirements.txt             DEPLOYMENT deps (dash, plotly) — what Vercel installs
+├── requirements-analysis.txt    ANALYSIS deps — what regenerates the data
 ├── config.py                    schema, constants, the true generating coefficients
 ├── data_gen.py                  builds the star schema, injects defects, loads SQLite
 ├── analysis.py                  clean → EDA → regression → classification → clustering
@@ -347,7 +351,7 @@ saas-revenue-analytics/
 ├── main.py                      orchestration — runs the pipeline, optionally serves
 ├── tests/
 │   ├── test_data_pipeline.py    16 tests: schema, leakage, signal
-│   └── test_dashboard.py        16 tests: payload, deploy constraint, callbacks
+│   └── test_dashboard.py        20 tests: payload, deploy constraint, callbacks, entry point
 ├── data/README.md               provenance, the sampling rule, the defect inventory
 ├── data/raw/                    generated CSVs + SQLite (gitignored)
 └── reports/
@@ -355,6 +359,50 @@ saas-revenue-analytics/
     ├── data_quality.json        what was wrong and what was done about it
     └── figures/                 22 PNGs
 ```
+
+## Deployment — Vercel
+
+The live dashboard is a serverless function, not a long-running server. Three files make that work:
+
+| File | What it does |
+| --- | --- |
+| `api/index.py` | The entry point. Imports the Dash app and exposes **`dash_app.server`** — the Flask instance underneath, which is a standard WSGI application. **The variable must be named `app`**; Vercel looks for that exact name, and getting it wrong builds successfully and then returns 500 on every request |
+| `vercel.json` | Routes every path to the function and declares which files travel with it |
+| `requirements.txt` | The **deployment** dependencies — dash and plotly only |
+
+### The dependency split, and why it exists
+
+Vercel installs from the root `requirements.txt`, and its Python bundle limit is 500 MB against a
+~1 GB analysis stack. So the files are split by *what they are for*:
+
+- **`requirements.txt`** — what the dashboard needs to **run**. Two packages.
+- **`requirements-analysis.txt`** — what you additionally need to **regenerate the data**. It starts
+  with `-r requirements.txt`, so installing it gives you both.
+
+`make setup` installs the analysis file, so a local clone is complete by default.
+
+### Three decisions that made deployment possible
+
+1. **The dashboard rebuilds its charts in Plotly** rather than displaying the PNG figures. Those are
+   committed for the README, but a deployed function reading them would need the whole image set and
+   would be less useful than a chart you can filter.
+2. **No model runs at request time.** `analysis.py` writes `reports/results.json`; the dashboard reads
+   it. That is why moving a slider is instant instead of triggering a refit.
+3. **pandas was removed from the dashboard entirely.** It was used in four places — filtering a list,
+   summing a column, taking a set of ids — all of which plain Python does. Dropping it also dropped
+   NumPy: **64 MB off the bundle**, which is now roughly 74 MB against a 500 MB limit.
+
+### Verified locally
+
+`api/index.py` is exercised by four tests that serve real requests through the WSGI interface: that
+`app` exists and is callable, that it is the Flask server rather than the Dash object, that `/`
+returns 200 with the app title in the body, and that `/_dash-layout` and `/_dash-dependencies` answer
+— because a deployment that serves the page but not those renders blank, which looks like a styling
+problem rather than a routing one.
+
+**What is not verified:** the Vercel-specific configuration itself. `includeFiles` names the files
+that must travel with the function, and Vercel's Python runtime version is not pinned here. Those are
+correct to the best of the documentation available, and the first deploy is the test.
 
 ## Architecture: why the dashboard is separate
 

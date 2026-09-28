@@ -149,7 +149,7 @@ def test_dashboard_imports_no_heavy_libraries():
             imported.add(node.module.split(".")[0])
 
     heavy = {"sklearn", "matplotlib", "scipy", "xgboost", "statsmodels",
-             "hdbscan", "umap", "seaborn", "numpy", "PIL", "wordcloud"}
+             "hdbscan", "umap", "seaborn", "numpy", "pandas", "PIL", "wordcloud"}
     offending = imported & heavy
     assert not offending, (
         f"dashboard.py imports {offending}. These must stay in analysis.py: "
@@ -170,7 +170,10 @@ def test_the_dashboard_only_imports_what_it_should():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
 
-    allowed = {"dash", "plotly", "pandas", "json", "os", "datetime", "math"}
+    # * pandas was removed on 2026-09-27. It was used in four places, all of
+    # * which plain Python handles, and it was pulling NumPy into the deployment
+    # * bundle for no benefit.
+    allowed = {"dash", "plotly", "json", "os", "datetime", "math"}
     unexpected = imported - allowed
     assert not unexpected, (
         f"dashboard.py imports {unexpected}, which is outside the agreed set {allowed}. "
@@ -314,3 +317,97 @@ def test_trend_chart_final_point_equals_the_headline_total(dashboard, results):
     figure = dashboard.executive_tab().children[1].children[0].figure
     cumulative = next(t for t in figure["data"] if t.get("name") == "Accumulated")
     assert cumulative["y"][-1] == pytest.approx(results["revenue"]["total_mrr"], rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# 5. The serverless entry point
+# ---------------------------------------------------------------------------
+# These tests exist because the deployment entry point fails in a way that is
+# invisible until it is live. A missing `app`, or an `app` that is not a WSGI
+# callable, still builds successfully on Vercel and then returns 500 for every
+# request with nothing useful in the logs.
+
+ENTRY_PATH = os.path.join(PROJECT_ROOT, "api", "index.py")
+
+
+def _load_entry_point():
+    """Import api/index.py by path, since it is not a package on sys.path."""
+    import importlib.util
+
+    if not os.path.exists(ENTRY_PATH):
+        pytest.skip("api/index.py not present — nothing to deploy")
+    spec = importlib.util.spec_from_file_location("vercel_entry", ENTRY_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_entry_point_exposes_a_wsgi_callable():
+    """Vercel looks for a module-level name `app` and treats it as the handler."""
+    entry = _load_entry_point()
+    assert hasattr(entry, "app"), (
+        "api/index.py has no `app`. Vercel requires that exact name — it builds "
+        "successfully without it and then returns 500 for every request."
+    )
+    assert callable(entry.app), "`app` exists but is not callable, so it is not a WSGI app"
+
+
+def test_entry_point_app_is_the_dash_flask_server(dashboard):
+    """The handler must be the Dash Flask instance, not the Dash object.
+
+    `dash.Dash` is not a WSGI application; `dash.Dash().server` is. Exposing the
+    wrong one is the most common way this file is written incorrectly.
+    """
+    entry = _load_entry_point()
+    assert entry.app is dashboard.app.server, (
+        "api/index.py exposes something other than dashboard.app.server"
+    )
+
+
+def test_entry_point_answers_a_real_request():
+    """Serve one request straight through the WSGI interface — no server needed.
+
+    wsgiref builds a valid, empty request environment; calling the app with it
+    exercises the same code path a live HTTP request would, without binding a
+    port or waiting for a network round trip.
+    """
+    from wsgiref.util import setup_testing_defaults
+
+    entry = _load_entry_point()
+    environ = {}
+    setup_testing_defaults(environ)
+    environ["REQUEST_METHOD"] = "GET"
+    environ["PATH_INFO"] = "/"
+
+    captured = {}
+
+    def start_response(status, headers):
+        captured["status"] = status
+        captured["headers"] = headers
+
+    body = b"".join(entry.app(environ, start_response))
+
+    assert captured["status"].startswith("200"), f"got status {captured['status']}"
+    assert b"Northwind Analytics" in body, "the served page does not contain the app title"
+
+
+def test_entry_point_serves_the_dash_callback_endpoints():
+    """Dash fetches its layout and dependency graph from separate URLs.
+
+    A deployment that serves `/` but not `/_dash-layout` renders an empty page,
+    which looks like a styling problem rather than a routing one.
+    """
+    from wsgiref.util import setup_testing_defaults
+
+    entry = _load_entry_point()
+    for path in ("/_dash-layout", "/_dash-dependencies"):
+        environ = {}
+        setup_testing_defaults(environ)
+        environ["REQUEST_METHOD"] = "GET"
+        environ["PATH_INFO"] = path
+
+        captured = {}
+        body = b"".join(entry.app(environ,
+                                  lambda s, h: captured.update(status=s)))
+        assert captured["status"].startswith("200"), f"{path} returned {captured['status']}"
+        assert len(body) > 100, f"{path} returned an empty body"

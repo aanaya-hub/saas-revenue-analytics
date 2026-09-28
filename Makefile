@@ -34,7 +34,9 @@ help:
 	@echo "clean     remove generated data, figures and Python caches"
 
 # --- setup ------------------------------------------------------------------
-# Creates the virtual environment and installs everything from requirements.txt.
+# Creates the virtual environment and installs the FULL analysis stack from
+# requirements-analysis.txt, which includes requirements.txt. The deployment
+# host installs only requirements.txt — see the note at the top of that file.
 # The environment is named venv-saas so it is obvious which project it belongs
 # to when several exist side by side.
 #
@@ -43,7 +45,7 @@ help:
 # environment that was never built, and the confusing error would appear far
 # from the real cause.
 setup:
-	python3 -m venv venv-saas && ./venv-saas/bin/pip install --upgrade pip && ./venv-saas/bin/pip install -r requirements.txt
+	python3 -m venv venv-saas && ./venv-saas/bin/pip install --upgrade pip && ./venv-saas/bin/pip install -r requirements-analysis.txt
 
 # --- all --------------------------------------------------------------------
 # One command for everything. Delegates to main.py, which runs each step in its

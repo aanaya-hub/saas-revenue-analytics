@@ -10,7 +10,13 @@ HOW TO RUN IT
 Then open http://127.0.0.1:8050
 
 WHY THIS FILE IMPORTS SO LITTLE
-    It imports dash, plotly and pandas. That is the whole list.
+    It imports dash and plotly. That is the whole list.
+
+An earlier version also imported pandas, to hold the 200 customers in a
+DataFrame. It was used in exactly four places — filtering a list, summing a
+column, and taking a set of cluster ids — all of which plain Python does. In a
+notebook that would be a style question; here it is 64 MB of the deployment
+bundle, because pandas brings NumPy with it.
 
 Three separate reasons, and all three matter:
 
@@ -45,8 +51,6 @@ from the optional dash_table component.
 import json          # reads reports/results.json
 import os            # builds the path to that file portably
 
-import pandas as pd  # minor reshaping of the precomputed tables for charting
-
 import dash                                  # the application object itself
 from dash import html, dcc                   # page structure and interactive controls
 from dash.dependencies import Input, Output  # wires a control to a callback
@@ -73,7 +77,15 @@ with open(RESULTS_PATH, encoding="utf-8") as handle:
     RESULTS = json.load(handle)
 
 DASH = RESULTS["dashboard"]
-CUSTOMERS = pd.DataFrame(DASH["customers"])
+# * A plain list of dictionaries, exactly as it was written to JSON. No
+# * DataFrame: this file only ever filters, sums and takes sets, and pandas
+# * would add 64 MB to the deployment bundle to do it.
+CUSTOMERS = DASH["customers"]
+
+# * Precomputed once at import rather than on every request. The bands never
+# * change, and recomputing them inside a callback would repeat the same work
+# * on every slider movement.
+HIGH_RISK = [customer for customer in CUSTOMERS if customer["risk_band"] == "High"]
 COST = RESULTS["modelling"]["classification"]["threshold_analysis"]["cost_assumptions"]
 REPAIRS = RESULTS["repairs"]
 CHURN = RESULTS["churn"]
@@ -183,8 +195,6 @@ def executive_tab():
     # * for that reason.
     annualised = last["mrr"] * 12
 
-    high_risk = CUSTOMERS[CUSTOMERS["risk_band"] == "High"]
-
     cards = html.Div([
         kpi("Revenue, 4 months", f"${total_revenue:,.0f}",
             f"accumulated across {revenue['customers']} customers"),
@@ -200,8 +210,9 @@ def executive_tab():
         kpi("Top 10% hold",
             f"{RESULTS['concentration']['top_10_pct_share_of_mrr']:.0%}",
             "of all revenue"),
-        kpi("Revenue at risk", f"${high_risk['mrr'].sum():,.0f}",
-            f"per month, across {len(high_risk)} high-risk accounts"),
+        kpi("Revenue at risk",
+            f"${sum(customer['mrr'] for customer in HIGH_RISK):,.0f}",
+            f"per month, across {len(HIGH_RISK)} high-risk accounts"),
     ], style={"display": "flex", "flexWrap": "wrap", "gap": "18px", "marginBottom": "10px"})
 
     # --- Revenue trend, and the accumulation ---------------------------------
@@ -665,13 +676,20 @@ def draw_segment_scatter(_tab):
     if _tab != "segments":
         return no_update
 
-    clusters = sorted(CUSTOMERS["cluster"].unique())
+    # * A set comprehension collects the distinct cluster ids; sorted() makes
+    # * the order stable, so the legend does not reshuffle between releases.
+    clusters = sorted({customer["cluster"] for customer in CUSTOMERS})
+
     traces = []
     for index, cluster in enumerate(clusters):
-        subset = CUSTOMERS[CUSTOMERS["cluster"] == cluster]
+        # * One list comprehension instead of a DataFrame boolean mask. For 200
+        # * rows the difference in speed is irrelevant and the difference in
+        # * bundle size is 64 MB.
+        subset = [customer for customer in CUSTOMERS if customer["cluster"] == cluster]
         traces.append({
-            "x": subset["usage_per_seat"], "y": subset["nps_score"],
-            "text": subset["company"],
+            "x": [customer["usage_per_seat"] for customer in subset],
+            "y": [customer["nps_score"] for customer in subset],
+            "text": [customer["company"] for customer in subset],
             "mode": "markers", "type": "scatter", "name": f"cluster {cluster}",
             "marker": {"size": 9, "opacity": 0.75,
                        "color": [BRAND, ACCENT, GREEN, "#7B6D8D"][index % 4]},
