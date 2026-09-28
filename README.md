@@ -365,7 +365,7 @@ saas-revenue-analytics/
 
 ## Deployment — Hugging Face Spaces
 
-The dashboard is deployed as a **Docker container**. `Dockerfile` at the repository root builds an
+The dashboard is packaged as a **Docker container**. `Dockerfile` at the repository root builds an
 image that installs two libraries, copies three files, and serves the app with gunicorn on port 7860.
 
 | File | What it does |

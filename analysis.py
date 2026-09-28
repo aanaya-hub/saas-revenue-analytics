@@ -2648,10 +2648,10 @@ def predict_nps_out_of_sample(frame):
 # THE DASHBOARD PAYLOAD — everything the dashboard needs, and nothing it does not
 # ============================================================================
 # WHY THIS EXISTS AS A SEPARATE STRUCTURE
-#   The dashboard is deployed to a free host whose Python bundle limit is 500 MB.
-#   The analysis stack — xgboost alone is about 200 MB — is roughly 1 GB, so the
-#   dashboard must never import it. Instead, everything it displays is computed
-#   here and written to reports/results.json as plain numbers.
+#   The dashboard runs in a container that installs two libraries. The analysis
+#   stack — xgboost alone is about 200 MB — is roughly 1 GB, so the dashboard
+#   must never import it. Instead, everything it displays is computed here and
+#   written to reports/results.json as plain numbers.
 #
 #   That has a useful side effect: models never re-train because somebody moved
 #   a slider. The dashboard does arithmetic on precomputed probabilities, which
