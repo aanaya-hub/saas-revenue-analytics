@@ -82,7 +82,7 @@ the other two because it is the only one that cannot end in a suspended service.
 
 | Option | Effect | Instance hours/month | Verdict |
 | --- | --- | --- | --- |
-| Leave it sleeping | First visitor waits ~1 min | ~0 | rejected — a recruiter may click away |
+| Leave it sleeping | First visitor waits ~13 s | ~0 | rejected — a spinner on first contact is a bad first impression |
 | Pinger 24/7 | Always instant | ~730 of 750 | rejected — 20 h of margin is not worth risking suspension |
 | **Pinger, 12 h/day** | **Instant through the US business day** | **~365 of 750 (49%)** | **adopted** |
 
@@ -105,20 +105,36 @@ feature, and that is **paid-only**.
 **Setup:** one HTTP job, method `GET`, URL `https://saas-revenue-analytics.onrender.com/`, executed
 **every 5 minutes** inside the window. Five minutes is deliberate — three times more frequent than Render's
 15-minute sleep threshold, so a delayed execution still cannot let the instance sleep. That is roughly
-**4,400 requests and about 19 MB a month**.
+**4,400 requests and about 19 MB a month**. **Turn the failure-notification email ON** — the section below
+shows there is no daily false alarm for it to hide behind.
 
-### Expect exactly one failed execution per day
+### The cold start is ~13 seconds — measured, not assumed
 
-Worth stating up front so it is not misread as a problem:
+Render's documentation says a woken instance takes *"about a minute."* **Measured twice on this deployment,
+it is closer to 13 seconds:**
 
-**cron-job.org abandons a request after 30 seconds. Waking a sleeping Render instance takes about a
-minute.** So the first ping after the overnight gap times out — and that timed-out request is precisely
-what wakes the service. The next ping, five minutes later, succeeds.
+| Test | First request after idle | Request immediately after |
+| --- | --- | --- |
+| 22 minutes silent | **HTTP 200 in 12.57 s** | 0.225 s |
+| Earlier observation | 13.29 s | 0.226 s |
 
-The job is only auto-disabled after **25 consecutive** failures, so a single daily timeout never triggers
-it. **Leave the failure-notification email switched off**, or it arrives every morning and trains you to
-ignore the one that would actually matter. Check the execution history instead when reviewing the campaign
-each week.
+Two consistent readings on a genuinely cold instance. The tell is the second request: it is always
+sub-second, so a fast *first* response would mean the instance had never slept and the test measured
+nothing.
+
+**Two consequences, both better than the plan assumed:**
+
+1. **cron-job.org will never time out.** Its ceiling is 30 seconds and the wake takes ~13, so there is **no
+   daily failed execution** to explain away. The failure-notification email can therefore be left **ON** —
+   a failure there is real signal rather than daily noise.
+2. **A visitor waits ~13 seconds, not a minute.** Worth knowing before deciding how prominently to feature
+   the link.
+
+**The same test ruled out a live risk.** It confirmed the instance really does sleep, which means Render
+does **not** execute the `HEALTHCHECK` in our Dockerfile. Had Render honoured it, the app would never have
+slept, would have consumed all ~730 usable hours, and would have been heading for exactly the month-end
+suspension this whole decision exists to avoid. Worth re-confirming if the Dockerfile's health check is
+ever changed.
 
 ### Why the ceiling mattered more than the cold start
 
@@ -139,7 +155,7 @@ curl -s -o /dev/null -w "%{http_code}\n" $URL/_dash-dependencies
 
 All three should print `200`. The last two matter most: an app that serves the page but not those renders
 blank, which looks like a styling problem rather than a routing one. Use a generous `--max-time` on the
-first call — after a sleep it takes about a minute.
+first call — after a sleep it takes about 13 seconds.
 
 The first request after long idle periods is the one to watch. If it ever returns a Render error page
 rather than the dashboard, the instance may have been suspended for exhausting its monthly hours.

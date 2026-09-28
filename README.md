@@ -4,7 +4,7 @@ A full analytics pipeline over a fictional B2B SaaS business: generate the data,
 revenue, predict churn, segment the customer base, and present it in an interactive dashboard.
 
 **Live demo:** [saas-revenue-analytics.onrender.com](https://saas-revenue-analytics.onrender.com)
-*(free tier — after 15 minutes idle the first load takes about a minute to wake. It is not broken.)*
+*(free tier — after 15 minutes idle the first load takes about 15 seconds to wake. It is not broken.)*
 
 **Stack:** Python 3.13 · pandas · NumPy · scikit-learn · statsmodels · XGBoost · SciPy · Plotly ·
 Dash · SQLite · matplotlib · seaborn
