@@ -22,15 +22,15 @@ Dash · SQLite · matplotlib · seaborn
 | 5 | Clustering — KMeans, DBSCAN, HDBSCAN, PCA, t-SNE, UMAP | `analysis.py` | **complete** |
 | 6 | Interactive dashboard | `dashboard.py` | **complete** |
 | 7 | Orchestration | `main.py` | **complete** |
-| 8 | Deployment to Vercel | `vercel.json`, `api/index.py` | **prepared — first deploy pending** |
+| 8 | Deployment to Hugging Face Spaces | `Dockerfile`, `deploy/huggingface/` | **prepared — first deploy pending** |
 
 **Current state: steps 1–7 complete, step 8 prepared.** The pipeline runs end to end, produces **22 figures** and a single
-`reports/results.json`, and passes **32 tests**. The dashboard runs locally; nothing is deployed yet and
-nothing has been pushed.
+`reports/results.json`, and passes **40 tests**. The code is on GitHub and in sync; the container has not
+been built yet, because that needs a hosting account.
 
 ```bash
 make all        # the whole pipeline in one command
-make test       # 36 tests
+make test       # 40 tests
 make serve      # start the dashboard at http://127.0.0.1:8050
 ```
 
@@ -297,13 +297,13 @@ contribution.
 
 ### Why the dashboard imports almost nothing
 
-`dashboard.py` imports **dash, plotly and pandas**. That is the entire list, and a test asserts it.
+`dashboard.py` imports **dash and plotly**. That is the entire list, and a test asserts it.
 
 Three reasons, and all three matter:
 
-1. **Deployment size.** The target host caps a Python bundle at 500 MB. The analysis stack — xgboost
-   alone is about 200 MB — is close to 1 GB. One stray import would make the site undeployable, with
-   no symptom until deploy day. Hence the test.
+1. **Deployment size.** The analysis stack — xgboost alone is about 200 MB — is close to 1 GB, against
+   a runtime image that needs two packages. One stray import would bloat every build, with no symptom
+   until deploy day. Hence the test.
 2. **Speed.** Models are trained in `analysis.py`, never here. Moving a slider does arithmetic on 200
    stored numbers, so the response is instant. Retraining per interaction would be unusable.
 3. **Honesty.** Every number was computed once, in one place, by code with tests. A dashboard free to
@@ -318,7 +318,7 @@ empty charts.
 ```bash
 make setup      # create venv-saas and install requirements
 make all        # the whole pipeline in one command (main.py)
-make test       # 36 tests
+make test       # 40 tests
 make serve      # start the dashboard at http://127.0.0.1:8050
 ```
 
@@ -340,9 +340,12 @@ specific to one operating system, and fully reproducible from `requirements.txt`
 
 ```
 saas-revenue-analytics/
-├── api/index.py                 Vercel entry point — exposes the WSGI app
-├── vercel.json                  routing and which files the function carries
-├── requirements.txt             DEPLOYMENT deps (dash, plotly) — what Vercel installs
+├── Dockerfile                   builds the deployed image: dash, plotly, 3 copied files
+├── .dockerignore                keeps the virtualenv and generated data out of the build
+├── deploy/huggingface/          Space front page + the deployment runbook
+├── api/index.py                 Vercel entry point — kept, see Deployment
+├── vercel.json                  Vercel routing — kept, see Deployment
+├── requirements.txt             DEPLOYMENT deps (dash, plotly) — what the image installs
 ├── requirements-analysis.txt    ANALYSIS deps — what regenerates the data
 ├── config.py                    schema, constants, the true generating coefficients
 ├── data_gen.py                  builds the star schema, injects defects, loads SQLite
@@ -351,7 +354,7 @@ saas-revenue-analytics/
 ├── main.py                      orchestration — runs the pipeline, optionally serves
 ├── tests/
 │   ├── test_data_pipeline.py    16 tests: schema, leakage, signal
-│   └── test_dashboard.py        20 tests: payload, deploy constraint, callbacks, entry point
+│   └── test_dashboard.py        24 tests: payload, deploy constraint, callbacks, entry point
 ├── data/README.md               provenance, the sampling rule, the defect inventory
 ├── data/raw/                    generated CSVs + SQLite (gitignored)
 └── reports/
@@ -360,20 +363,26 @@ saas-revenue-analytics/
     └── figures/                 22 PNGs
 ```
 
-## Deployment — Vercel
+## Deployment — Hugging Face Spaces
 
-The live dashboard is a serverless function, not a long-running server. Three files make that work:
+The dashboard is deployed as a **Docker container**. `Dockerfile` at the repository root builds an
+image that installs two libraries, copies three files, and serves the app with gunicorn on port 7860.
 
 | File | What it does |
 | --- | --- |
-| `api/index.py` | The entry point. Imports the Dash app and exposes **`dash_app.server`** — the Flask instance underneath, which is a standard WSGI application. **The variable must be named `app`**; Vercel looks for that exact name, and getting it wrong builds successfully and then returns 500 on every request |
-| `vercel.json` | Routes every path to the function and declares which files travel with it |
-| `requirements.txt` | The **deployment** dependencies — dash and plotly only |
+| `Dockerfile` | The whole deployment. Installs `dash` + `plotly`, copies `dashboard.py` and `reports/results.json`, runs gunicorn |
+| `.dockerignore` | Keeps the virtualenv and the generated CSVs out of the build context. Docker does not read `.gitignore`, so without this a local build would ship hundreds of megabytes |
+| `dashboard.py` | Exposes `server = app.server` — the Flask instance underneath Dash, and the object gunicorn imports as `dashboard:server` |
+| `deploy/huggingface/space-README.md` | The Space's own front page. Hugging Face requires YAML at the very top of the Space's README, and that block would render as a stray table on this GitHub page — so the two are separate files |
+| `deploy/huggingface/DEPLOY.md` | The step-by-step runbook |
+
+The image stays small because the dashboard computes nothing. It reads one precomputed JSON file, so
+the container never needs pandas, scikit-learn or XGBoost — **roughly 300 MB instead of ~1 GB**, and it
+starts in about two seconds.
 
 ### The dependency split, and why it exists
 
-Vercel installs from the root `requirements.txt`, and its Python bundle limit is 500 MB against a
-~1 GB analysis stack. So the files are split by *what they are for*:
+The files are split by *what they are for*:
 
 - **`requirements.txt`** — what the dashboard needs to **run**. Two packages.
 - **`requirements-analysis.txt`** — what you additionally need to **regenerate the data**. It starts
@@ -384,34 +393,53 @@ Vercel installs from the root `requirements.txt`, and its Python bundle limit is
 ### Three decisions that made deployment possible
 
 1. **The dashboard rebuilds its charts in Plotly** rather than displaying the PNG figures. Those are
-   committed for the README, but a deployed function reading them would need the whole image set and
-   would be less useful than a chart you can filter.
+   committed for this README, but a container reading them would need the whole image set and would be
+   less useful than a chart you can filter.
 2. **No model runs at request time.** `analysis.py` writes `reports/results.json`; the dashboard reads
    it. That is why moving a slider is instant instead of triggering a refit.
 3. **pandas was removed from the dashboard entirely.** It was used in four places — filtering a list,
    summing a column, taking a set of ids — all of which plain Python does. Dropping it also dropped
-   NumPy: **64 MB off the bundle**, which is now roughly 74 MB against a 500 MB limit.
+   NumPy, taking the single largest dependency out of the runtime image.
 
-### Verified locally
+### Verified locally, before deploying
 
-`api/index.py` is exercised by four tests that serve real requests through the WSGI interface: that
-`app` exists and is callable, that it is the Flask server rather than the Dash object, that `/`
-returns 200 with the app title in the body, and that `/_dash-layout` and `/_dash-dependencies` answer
-— because a deployment that serves the page but not those renders blank, which looks like a styling
-problem rather than a routing one.
+The exact command in the Dockerfile's `CMD` was run against the real application:
 
-**What is not verified:** the Vercel-specific configuration itself. `includeFiles` names the files
-that must travel with the function, and Vercel's Python runtime version is not pinned here. Those are
-correct to the best of the documentation available, and the first deploy is the test.
+- `gunicorn --bind 0.0.0.0:7860 --workers 2 --threads 4 dashboard:server` binds and boots both workers.
+- `/` returns **200**; `/_dash-layout` returns **200** carrying all five tab labels; `/_dash-dependencies`
+  returns **200** listing **6 callbacks**, including the churn-threshold slider.
+- Checking those two endpoints matters because a deployment that serves the page but not them renders
+  blank — which looks like a styling problem rather than a routing one.
+- `--no-control-socket` is load-bearing, not cosmetic. gunicorn 26 opens a control socket at
+  `/run/user/1000/gunicorn.ctl` by default, which does not exist in a container, so it logs
+  `Control server error: [Errno 30] Read-only file system` on every start. The flag removes it; with the
+  flag the log is clean.
+
+**What is not verified:** the image itself has never been built. Docker was not available on the machine
+where this was written, so the `Dockerfile` is correct against Hugging Face's documented requirements —
+user ID 1000, `WORKDIR` before `COPY`, `--chown=user` — but the first build is the real test.
+
+### Two hosts that did not work, and why
+
+Recorded because the reasons are more useful than the outcome:
+
+- **Vercel** — `api/index.py` and `vercel.json` are that attempt's leftover configuration. Technically
+  viable at ~74 MB against a 500 MB limit, but deployment was blocked at account verification. Kept
+  because the path is not closed.
+- **Netlify** — cannot host this at all. Netlify Functions run JavaScript and TypeScript only; the
+  Python support Netlify documents is for *build* steps, not for serving an application.
+
+Hugging Face Spaces was chosen because it accepts an arbitrary Dockerfile, so no bundle ceiling applies.
 
 ## Architecture: why the dashboard is separate
 
-**`dashboard.py` imports only `dash`, `plotly` and `pandas`.** Every model runs in `analysis.py` and
-writes small JSON artefacts to `reports/`; the dashboard reads those and renders.
+**`dashboard.py` imports only `dash` and `plotly`** — plus the standard library. No pandas, no NumPy.
+Every model runs in `analysis.py` and writes small JSON artefacts to `reports/`; the dashboard reads
+those and renders.
 
-This is not tidiness. The deployment target is Vercel, whose Python function bundle limit is **500 MB**,
-and the analysis stack — xgboost alone is roughly 200 MB, scikit-learn and SciPy about 120 MB each —
-is close to 1 GB. Bundling it would fail the build.
+This is not tidiness. The analysis stack — xgboost alone is roughly 200 MB, scikit-learn and SciPy
+about 120 MB each — is close to 1 GB, and a deployed image carrying it would be slow to build and slow
+to start for no benefit, because not one line of it runs in the browser.
 
 Separating them is better practice anyway: models should not retrain on every page load.
 

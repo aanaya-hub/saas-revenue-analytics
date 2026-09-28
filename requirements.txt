@@ -1,8 +1,10 @@
 # ============================================================================
 # DEPLOYMENT dependencies — what the dashboard needs to RUN.
 #
-# Vercel installs from this file when building the serverless function, and the
-# bundle is capped at 500 MB. So this list is deliberately tiny.
+# The Dockerfile installs from this file, then adds gunicorn on top. gunicorn is
+# the server, not a library the application imports, so it is installed where it
+# is actually used. The dashboard only renders charts, so this list is
+# deliberately tiny: two libraries, no analysis stack.
 #
 # To regenerate the DATA the dashboard displays, you also need the analysis
 # stack — install requirements-analysis.txt, or just run `make setup`, which

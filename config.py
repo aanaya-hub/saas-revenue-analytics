@@ -59,9 +59,10 @@ SQLITE_PATH = os.path.join(DATA_RAW_DIR, "saas_revenue.db")
 
 # * Precomputed analysis results. dashboard.py reads ONLY these files.
 # ! This separation is not tidiness, it is a hard deployment constraint.
-# ! Vercel caps a Python function bundle at 500 MB. The analysis stack
-# ! (scikit-learn + xgboost + scipy + matplotlib) is roughly 1 GB, so the
-# ! dashboard must never import it. It reads these JSON artefacts instead.
+# ! The deployed image installs two libraries; the analysis stack
+# ! (scikit-learn + xgboost + scipy + matplotlib) is roughly 1 GB and would
+# ! slow every build to serve code that never runs in a browser. So the
+# ! dashboard must never import it — it reads these JSON artefacts instead.
 RESULTS_PATH = os.path.join(REPORTS_DIR, "results.json")
 
 # ---------------------------------------------------------------------------

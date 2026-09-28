@@ -42,9 +42,13 @@ jinja2==3.1.6
 lxml==6.1.3
 
 # --- DASHBOARD. Deployed. Deliberately small. ---
-# Vercel caps a Python function bundle at 500 MB. The analysis stack above is
-# roughly 1 GB (xgboost alone is about 200 MB), so dashboard.py must never
-# import it. It reads precomputed JSON from reports/ instead.
+# The analysis stack above is roughly 1 GB (xgboost alone is about 200 MB), so
+# dashboard.py must never import it. It reads precomputed JSON from reports/.
+# dash and plotly are also pinned in requirements.txt, which is what the
+# Dockerfile installs; they appear here as well because this is the file
+# `make setup` installs, and that must leave a working dashboard behind.
+# gunicorn is the production server the Dockerfile runs. `make serve` does not
+# need it — that uses the development server built into Dash.
 dash==4.4.1
 plotly==7.1.0
 gunicorn==26.2.0

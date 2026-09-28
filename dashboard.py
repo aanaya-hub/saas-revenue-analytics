@@ -519,6 +519,12 @@ APP_TITLE = "SaaS revenue analytics — Northwind Analytics"
 
 app = dash.Dash(__name__, title=APP_TITLE)
 
+# A Dash application is a thin layer on top of a standard Flask application, and
+# `app.server` is that inner Flask object. Naming it here lets a production process
+# manager import the app directly as `dashboard:server` (gunicorn does exactly that
+# inside the Docker image) instead of being handed the single-threaded dev server.
+server = app.server
+
 app.layout = html.Div([
     html.Div([
         html.H1("Northwind Analytics", style={"fontSize": "24px", "margin": "0 0 4px 0"}),
@@ -737,6 +743,9 @@ def draw_segment_profile(_tab):
 if __name__ == "__main__":
     # * debug=False: the reloader would restart the server on every file save,
     # * which is useful while editing and actively unhelpful in a demonstration.
-    print("Dashboard starting on http://127.0.0.1:8050")
+    # * The port is read from the environment so that a hosting platform can dictate it;
+    # * with no such variable set — the normal local case — it falls back to 8050.
+    port = int(os.environ.get("PORT", "8050"))
+    print(f"Dashboard starting on http://127.0.0.1:{port}")
     print("Press Ctrl+C to stop.")
-    app.run(debug=False, port=8050)
+    app.run(debug=False, port=port)

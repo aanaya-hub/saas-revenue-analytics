@@ -1,0 +1,32 @@
+# Docker does not read .gitignore, so this file exists to keep the build
+# context small. The build sends every file in the folder to the Docker daemon
+# before it even reads the Dockerfile — without this list, a local build would
+# ship the virtual environment and the generated database and take minutes.
+
+# The virtual environment: hundreds of megabytes, and it is for the host
+# machine, not the container.
+venv-saas/
+.venv/
+venv/
+
+# Generated data. The container reads reports/results.json and nothing else, so
+# the raw CSVs, the SQLite database and the archive are all dead weight here.
+data/raw/
+
+# Python bytecode and test caches.
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Version control metadata.
+.git/
+.gitignore
+
+# Exported static figures. They are committed to GitHub because the README
+# displays them, but the container renders its charts live from JSON.
+reports/figures/
+
+# Notes and local scratch files.
+*.log
+*.tmp
+.DS_Store
