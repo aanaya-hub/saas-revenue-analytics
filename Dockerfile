@@ -1,7 +1,7 @@
 # ============================================================================
 # Dockerfile — runs the SaaS revenue analytics dashboard as a self-contained
-# container. Any host that takes a Dockerfile can run it; it is written for
-# Hugging Face Spaces, which is this project's deployment target.
+# container. Any host that takes a Dockerfile can run it; it is deployed on
+# Render's free tier, and nothing in it is tied to that choice.
 #
 # WHAT IS INSIDE, AND WHAT IS DELIBERATELY NOT
 #   The image installs two libraries (dash, plotly) and copies three files.
