@@ -3,6 +3,9 @@
 A full analytics pipeline over a fictional B2B SaaS business: generate the data, clean it, explain
 revenue, predict churn, segment the customer base, and present it in an interactive dashboard.
 
+**Live demo:** [saas-revenue-analytics.onrender.com](https://saas-revenue-analytics.onrender.com)
+*(free tier — after 15 minutes idle the first load takes about a minute to wake. It is not broken.)*
+
 **Stack:** Python 3.13 · pandas · NumPy · scikit-learn · statsmodels · XGBoost · SciPy · Plotly ·
 Dash · SQLite · matplotlib · seaborn
 
@@ -22,11 +25,10 @@ Dash · SQLite · matplotlib · seaborn
 | 5 | Clustering — KMeans, DBSCAN, HDBSCAN, PCA, t-SNE, UMAP | `analysis.py` | **complete** |
 | 6 | Interactive dashboard | `dashboard.py` | **complete** |
 | 7 | Orchestration | `main.py` | **complete** |
-| 8 | Deployment to Hugging Face Spaces | `Dockerfile`, `deploy/huggingface/` | **prepared — first deploy pending** |
+| 8 | Deployment to Render (Docker) | `Dockerfile`, `deploy/render/` | **complete — live** |
 
-**Current state: steps 1–7 complete, step 8 prepared.** The pipeline runs end to end, produces **22 figures** and a single
-`reports/results.json`, and passes **40 tests**. The code is on GitHub and in sync; the container has not
-been built yet, because that needs a hosting account.
+**Current state: all eight steps complete.** The pipeline runs end to end, produces **22 figures** and a
+single `reports/results.json`, passes **40 tests**, and the dashboard is deployed at the link above.
 
 ```bash
 make all        # the whole pipeline in one command
@@ -342,7 +344,7 @@ specific to one operating system, and fully reproducible from `requirements.txt`
 saas-revenue-analytics/
 ├── Dockerfile                   builds the deployed image: dash, plotly, 3 copied files
 ├── .dockerignore                keeps the virtualenv and generated data out of the build
-├── deploy/huggingface/          Space front page + the deployment runbook
+├── deploy/render/DEPLOY.md      the runbook, and the exact settings this deploy uses
 ├── api/index.py                 Vercel entry point — kept, see Deployment
 ├── vercel.json                  Vercel routing — kept, see Deployment
 ├── requirements.txt             DEPLOYMENT deps (dash, plotly) — what the image installs
@@ -363,22 +365,47 @@ saas-revenue-analytics/
     └── figures/                 22 PNGs
 ```
 
-## Deployment — Hugging Face Spaces
+## Deployment — Render (Docker)
 
-The dashboard is packaged as a **Docker container**. `Dockerfile` at the repository root builds an
-image that installs two libraries, copies three files, and serves the app with gunicorn on port 7860.
+The live dashboard runs as a **Docker container on Render's free tier**. `Dockerfile` at the repository
+root builds an image that installs two libraries, copies three files, and serves the app with gunicorn.
 
 | File | What it does |
 | --- | --- |
-| `Dockerfile` | The whole deployment. Installs `dash` + `plotly`, copies `dashboard.py` and `reports/results.json`, runs gunicorn |
+| `Dockerfile` | The whole deployment. Installs `dash`, `plotly` and gunicorn, copies `dashboard.py` and `reports/results.json`, and serves on `$PORT` |
 | `.dockerignore` | Keeps the virtualenv and the generated CSVs out of the build context. Docker does not read `.gitignore`, so without this a local build would ship hundreds of megabytes |
 | `dashboard.py` | Exposes `server = app.server` — the Flask instance underneath Dash, and the object gunicorn imports as `dashboard:server` |
-| `deploy/huggingface/space-README.md` | The Space's own front page. Hugging Face requires YAML at the very top of the Space's README, and that block would render as a stray table on this GitHub page — so the two are separate files |
-| `deploy/huggingface/DEPLOY.md` | The step-by-step runbook |
+| `deploy/render/DEPLOY.md` | The runbook, with the exact settings this deployment uses |
 
 The image stays small because the dashboard computes nothing. It reads one precomputed JSON file, so
 the container never needs pandas, scikit-learn or XGBoost — **roughly 300 MB instead of ~1 GB**, and it
-starts in about two seconds.
+starts in about two seconds. Measured resident memory after serving real requests: **84 MB** with one
+worker, **146 MB** with two.
+
+### The port is read from the environment, not hard-coded
+
+Hosts disagree about which port an app should use. Render injects `PORT` and routes traffic to whatever
+it holds; other platforms expect 7860. Baking in either one makes the image work on one host and fail on
+the other with `no open ports detected` — a confusing error, because the container itself is running
+perfectly.
+
+The `CMD` therefore uses the shell form to expand `${PORT:-7860}`, and the healthcheck reads `PORT` too.
+**The shell form is required, not stylistic**: the exec form passes its arguments literally and would
+never expand the variable. `exec` then hands gunicorn PID 1, so it receives the stop signal directly.
+
+Verified by running the `CMD` exactly as Docker invokes it: `PORT` unset binds 7860, `PORT=10000` binds
+10000, with HTTP 200 on `/` and `/_dash-layout` in both cases.
+
+### What the free tier means in practice
+
+Stated here rather than left for a visitor to discover:
+
+- The instance **sleeps after 15 minutes idle** and takes roughly **a minute** to wake. That is Render's
+  behaviour on free web services, not a fault in this app — which is why the live link above carries a note.
+- Each workspace gets **750 instance hours per calendar month**. A service kept awake around the clock
+  would use about 730 of them, so this one is allowed to sleep rather than risk suspension.
+- No credit card is required, and the free-database expiry that catches people out on Render does not
+  apply here, because this app stores nothing.
 
 ### The dependency split, and why it exists
 
@@ -401,35 +428,35 @@ The files are split by *what they are for*:
    summing a column, taking a set of ids — all of which plain Python does. Dropping it also dropped
    NumPy, taking the single largest dependency out of the runtime image.
 
-### Verified locally, before deploying
+### Verified end to end
 
-The exact command in the Dockerfile's `CMD` was run against the real application:
+Checked locally first, by running the Dockerfile's `CMD` against the real application:
 
-- `gunicorn --bind 0.0.0.0:7860 --workers 2 --threads 4 dashboard:server` binds and boots both workers.
 - `/` returns **200**; `/_dash-layout` returns **200** carrying all five tab labels; `/_dash-dependencies`
   returns **200** listing **6 callbacks**, including the churn-threshold slider.
 - Checking those two endpoints matters because a deployment that serves the page but not them renders
   blank — which looks like a styling problem rather than a routing one.
 - `--no-control-socket` is load-bearing, not cosmetic. gunicorn 26 opens a control socket at
   `/run/user/1000/gunicorn.ctl` by default, which does not exist in a container, so it logs
-  `Control server error: [Errno 30] Read-only file system` on every start. The flag removes it; with the
-  flag the log is clean.
+  `Control server error: [Errno 30] Read-only file system` on every start. The flag removes it.
+- The test suite is **40 tests**.
 
-**What is not verified:** the image itself has never been built. Docker was not available on the machine
-where this was written, so the `Dockerfile` is correct against Hugging Face's documented requirements —
-user ID 1000, `WORKDIR` before `COPY`, `--chown=user` — but the first build is the real test.
+Then checked again from outside, against the deployed URL: the same two endpoints returned **200** with
+**1,482** and **1,719** bytes — byte-for-byte what the local run produced. Same application, same payload.
 
-### Two hosts that did not work, and why
+### Four hosts, and why three of them did not work
 
 Recorded because the reasons are more useful than the outcome:
 
 - **Vercel** — `api/index.py` and `vercel.json` are that attempt's leftover configuration. Technically
-  viable at ~74 MB against a 500 MB limit, but deployment was blocked at account verification. Kept
+  viable at ~74 MB against a 500 MB limit, but deployment was blocked at account verification. Kept,
   because the path is not closed.
-- **Netlify** — cannot host this at all. Netlify Functions run JavaScript and TypeScript only; the
-  Python support Netlify documents is for *build* steps, not for serving an application.
-
-Hugging Face Spaces was chosen because it accepts an arbitrary Dockerfile, so no bundle ceiling applies.
+- **Netlify** — cannot host this at all. Netlify Functions run JavaScript and TypeScript only; the Python
+  support Netlify documents is for *build* steps, not for serving an application.
+- **Hugging Face Spaces** — was the chosen target until their pricing changed. Docker Spaces now require a
+  paid plan; only Static Spaces are free, and Static cannot run Python. The `Dockerfile` survived that
+  change untouched, which is the point of writing one — this is the same image, deployed somewhere else.
+- **Render** — free, no credit card, Docker detected automatically. Deployed here.
 
 ## Architecture: why the dashboard is separate
 
