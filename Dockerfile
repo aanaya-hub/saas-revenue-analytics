@@ -47,9 +47,15 @@ COPY --chown=user reports/results.json reports/results.json
 # Drop root for everything that runs after this line.
 USER user
 
-# 7860 is the port Hugging Face Spaces expects, and the value declared as
-# app_port in the Space's README. EXPOSE is documentation; the real binding
-# happens in the CMD below.
+# PORT IS READ FROM THE ENVIRONMENT, NOT HARD-CODED.
+#   Hosts disagree about which port to use. Render injects PORT and routes
+#   traffic to whatever value it holds; Hugging Face Spaces uses 7860. Baking in
+#   either one makes the image work on one host and fail on the other with
+#   "no open ports detected" — a confusing error, because the container itself
+#   is running perfectly.
+#
+#   7860 below is only a default. A host that exports PORT wins, because the
+#   runtime environment overrides the image's ENV.
 EXPOSE 7860
 ENV PORT=7860
 
@@ -58,7 +64,7 @@ ENV PORT=7860
 # because curl is not in the slim base image and installing it for one line
 # would be waste.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:7860/', timeout=4).status == 200 else 1)"
+  CMD python -c "import os, sys, urllib.request; p = os.environ.get('PORT', '7860'); sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:' + p + '/', timeout=4).status == 200 else 1)"
 
 # gunicorn is a production WSGI server. Unlike the development server bundled
 # with Dash it serves several requests at once and survives a failed one.
@@ -72,4 +78,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # fatal — the server still answers — but it prints a scary ERROR line into the
 # Space log on every single start, and a read-only dashboard has no use for a
 # control socket. Verified locally: the flag removes the error.
-CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "2", "--threads", "4", "--timeout", "120", "--no-control-socket", "dashboard:server"]
+#
+# The shell form below is required, not stylistic. The exec form — a JSON array —
+# passes its arguments literally and would never expand ${PORT}. `exec` then hands
+# gunicorn PID 1, so it receives the stop signal directly rather than through a
+# shell that might swallow it.
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-7860} --workers 2 --threads 4 --timeout 120 --no-control-socket dashboard:server"]

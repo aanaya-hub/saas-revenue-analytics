@@ -1,5 +1,26 @@
 # Deploying the dashboard to Hugging Face Spaces
 
+> **SUPERSEDED 2026-09-28 — DO NOT FOLLOW THIS FILE YET.**
+>
+> Hugging Face changed their pricing, and this runbook was written without knowing it: **Docker and
+> Gradio Spaces now require a paid plan.** Only **Static** Spaces are free. From the official
+> [Spaces Overview](https://huggingface.co/docs/hub/en/spaces-overview):
+>
+> *"Static Spaces are free for everyone. Gradio and Docker Spaces run on compute and require a paid
+> plan to create: PRO for personal accounts, Team or Enterprise for organizations."*
+>
+> PRO is **$9/month**, and it is a recurring charge — if the subscription lapses the Space most likely
+> stops, which would kill a demo link the campaign needs alive for months.
+>
+> **What is still valid here:** the `Dockerfile` itself. It is correct and was verified locally against
+> Hugging Face's documented container requirements (user ID 1000, `WORKDIR` before `COPY`,
+> `--chown=user`, `--no-control-socket`). It will work unchanged on any Docker host that is free.
+>
+> **What is wrong:** the assumption that Spaces is a free target, and therefore the whole "create the
+> Space and push" flow. That step cannot be completed on a free personal account.
+>
+> The deployment target is being re-decided. This file gets rewritten once it is chosen.
+
 > Written 2026-09-25. Hugging Face Spaces runs Docker containers as **user ID 1000**, which the
 > `Dockerfile` handles. Verified against the official
 > [Docker Spaces documentation](https://github.com/huggingface/hub-docs/blob/main/docs/hub/spaces-sdks-docker.md).
