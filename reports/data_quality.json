@@ -1,0 +1,80 @@
+{
+  "generated_utc": "2026-09-27T22:22:28+00:00",
+  "seed": 42,
+  "row_counts": {
+    "dim_region": 6,
+    "dim_plan": 6,
+    "dim_rep": 8,
+    "dim_date": 4,
+    "dim_customer": 200,
+    "fact_subscription_monthly": 749
+  },
+  "rows_under_cap": true,
+  "max_allowed_rows": 800,
+  "defects_injected": [
+    {
+      "table": "dim_customer",
+      "column": "industry",
+      "defect": "Blank industry",
+      "rows_affected": 6,
+      "breaks": "Cannot group or segment by industry until imputed"
+    },
+    {
+      "table": "dim_customer",
+      "column": "region_id",
+      "defect": "Blank region_id (broken foreign key)",
+      "rows_affected": 3,
+      "breaks": "Inner join to dim_region silently drops these customers"
+    },
+    {
+      "table": "dim_customer",
+      "column": "signup_date",
+      "defect": "Mixed date format (DD/MM/YYYY among ISO)",
+      "rows_affected": 8,
+      "breaks": "pd.to_datetime parses inconsistently; tenure is wrong for those rows"
+    },
+    {
+      "table": "fact_subscription_monthly",
+      "column": "usage_events",
+      "defect": "Blank usage_events",
+      "rows_affected": 18,
+      "breaks": "Mean usage and the usage-per-seat feature become biased if dropped"
+    },
+    {
+      "table": "fact_subscription_monthly",
+      "column": "usage_events",
+      "defect": "Negative usage_events",
+      "rows_affected": 4,
+      "breaks": "Impossible values that bias any mean computed without filtering"
+    },
+    {
+      "table": "fact_subscription_monthly",
+      "column": "discount_pct",
+      "defect": "Discount above 100%",
+      "rows_affected": 5,
+      "breaks": "Produces negative MRR; breaks the invoice arithmetic check"
+    },
+    {
+      "table": "fact_subscription_monthly",
+      "column": "fact_id",
+      "defect": "Duplicated rows",
+      "rows_affected": 12,
+      "breaks": "Double-counts revenue and inflates usage totals"
+    },
+    {
+      "table": "dim_customer",
+      "column": "rep_id",
+      "defect": "Rep hired after the customer signed up",
+      "rows_affected": 4,
+      "breaks": "Temporal impossibility; invalidates any rep-performance analysis"
+    }
+  ],
+  "defects_total_rows": 60,
+  "fact_rows_before_duplication": 737,
+  "churn": {
+    "customers": 200,
+    "churned": 40,
+    "rate": 0.2
+  },
+  "leakage_warning": "Churn is derived from the panel (last observed month < final month). It is never a column on fact_subscription_monthly. churn_reason_id is post-hoc and must never be used as a feature."
+}

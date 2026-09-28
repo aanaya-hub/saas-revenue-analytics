@@ -1,0 +1,60 @@
+# --- Virtual environments -------------------------------------------------
+# The project's own environment is called venv-saas (not .venv), so it is
+# named explicitly here. A virtual environment must never be committed: it is
+# hundreds of megabytes, it is platform-specific, and it is fully reproducible
+# from requirements.txt with a single command.
+venv-saas/
+.venv/
+.venv-deploy/
+
+# --- Python bytecode ------------------------------------------------------
+# __pycache__ holds compiled versions of the .py files. They are regenerated
+# automatically on import, so committing them adds noise and nothing else.
+__pycache__/
+*.pyc
+
+# --- Test output ----------------------------------------------------------
+.pytest_cache/
+
+# --- Deployment -----------------------------------------------------------
+.vercel/
+
+# --- Generated JSON: COMMITTED, and required for deployment ---------------
+# reports/results.json is the ONLY data source the dashboard reads. The
+# dashboard cannot compute it: it deliberately imports nothing heavier than
+# pandas, and the deployment host caps a Python bundle at 500 MB against a ~1 GB
+# analysis stack. So if results.json is not in the repository, the deployed
+# dashboard has nothing to show. It is committed for that reason, not by
+# accident.
+#
+# data_quality.json is committed alongside it for the same reason — the
+# dashboard's Data Quality tab renders it.
+
+# --- Generated data -------------------------------------------------------
+# The data is produced by `python data_gen.py` and is reproducible from a
+# single seed, so a stored copy proves nothing and adds 50 KB of churn to
+# every commit. The generator IS the artefact; the CSV is a by-product.
+data/raw/*.csv
+data/raw/*.db
+data/raw/*.zip
+
+# --- Generated figures: COMMITTED, deliberately ----------------------------
+# An earlier version of this file ignored these, reasoning that a committed
+# image can drift out of step with the code that drew it. That is true, and it
+# is outweighed here by something more important: this repository exists to be
+# READ. The README refers to the figures by name, and a reference that points at
+# nothing is worse than an image that might be one commit stale.
+#
+# Rebuilt by `make analyse` in about 35 seconds. 22 files, ~2.7 MB.
+
+# --- Editor scratch -------------------------------------------------------
+# Vim writes a .swp file beside whatever you are editing. They are session
+# state, they are meaningless outside the editor that made them, and they
+# appear mid-commit when someone saves and commits in a hurry.
+*.swp
+*.swo
+*~
+
+# --- Scratch --------------------------------------------------------------
+.mplcache/
+_private/
