@@ -75,19 +75,56 @@ Straight from Render's own documentation, because two of these will bite if igno
 - **No credit card required.** The free Postgres 30-day expiry that catches people out on Render does not
   apply here, because this app stores nothing.
 
-### If the cold start becomes a problem
+### Cold start — DECIDED 2026-09-28: keep-alive during business hours only
 
-Stated as a trade-off so it can be decided once rather than re-litigated:
+The link is kept warm by a free external pinger on a **bounded duty cycle**. That option was chosen over
+the other two because it is the only one that cannot end in a suspended service.
 
-| Option | Effect | Risk |
-| --- | --- | --- |
-| Leave it sleeping *(current)* | First visitor waits ~1 min | A recruiter may click away before it loads |
-| Keep-alive pinger, 24/7 | Always instant | ~730 of 750 hours consumed; exhaustion suspends the service |
-| Keep-alive, business hours only | Instant for most visitors | ~360 hours consumed; still sleeps overnight |
+| Option | Effect | Instance hours/month | Verdict |
+| --- | --- | --- | --- |
+| Leave it sleeping | First visitor waits ~1 min | ~0 | rejected — a recruiter may click away |
+| Pinger 24/7 | Always instant | ~730 of 750 | rejected — 20 h of margin is not worth risking suspension |
+| **Pinger, 12 h/day** | **Instant through the US business day** | **~365 of 750 (49%)** | **adopted** |
 
-**If a pinger is added, give it a bounded duty cycle rather than running it 24/7.** Spending the whole
-750-hour budget leaves a 20-hour margin, and a suspended service is a worse outcome than a slow one: a
-dead link on a resume is a dead link.
+**The window is 12:00–23:59 UTC.** In local terms:
+
+| Reader | Local hours the app is awake |
+| --- | --- |
+| Guadalajara (UTC-6) | 06:00 – 18:00 |
+| US Eastern (UTC-4) | 08:00 – 20:00 |
+| US Central (UTC-5) | 07:00 – 19:00 |
+| US Pacific (UTC-7) | 05:00 – 17:00 |
+
+That covers the US business day in every mainland timezone. **EU mornings are not covered** — if that ever
+matters, starting at 07:00 UTC instead raises usage to about 517 h/month, still inside the cap.
+
+**The tool is [cron-job.org](https://cron-job.org).** It is genuinely free with no paid tier, which is why
+it was chosen over UptimeRobot: UptimeRobot's only way to restrict hours is its *"maintenance window"*
+feature, and that is **paid-only**.
+
+**Setup:** one HTTP job, method `GET`, URL `https://saas-revenue-analytics.onrender.com/`, executed
+**every 5 minutes** inside the window. Five minutes is deliberate — three times more frequent than Render's
+15-minute sleep threshold, so a delayed execution still cannot let the instance sleep. That is roughly
+**4,400 requests and about 19 MB a month**.
+
+### Expect exactly one failed execution per day
+
+Worth stating up front so it is not misread as a problem:
+
+**cron-job.org abandons a request after 30 seconds. Waking a sleeping Render instance takes about a
+minute.** So the first ping after the overnight gap times out — and that timed-out request is precisely
+what wakes the service. The next ping, five minutes later, succeeds.
+
+The job is only auto-disabled after **25 consecutive** failures, so a single daily timeout never triggers
+it. **Leave the failure-notification email switched off**, or it arrives every morning and trains you to
+ignore the one that would actually matter. Check the execution history instead when reviewing the campaign
+each week.
+
+### Why the ceiling mattered more than the cold start
+
+Render suspends free web services that exhaust the 750-hour monthly cap. A suspended service serves an
+error page, and **a dead link on a resume is worse than a slow one** — a slow link still loads, and the
+README warns the reader. That asymmetry is what ruled out the 24/7 pinger, not the cost of the pings.
 
 ## Verifying a deploy
 
