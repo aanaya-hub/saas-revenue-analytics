@@ -98,9 +98,18 @@ the other two because it is the only one that cannot end in a suspended service.
 That covers the US business day in every mainland timezone. **EU mornings are not covered** — if that ever
 matters, starting at 07:00 UTC instead raises usage to about 517 h/month, still inside the cap.
 
-**The tool is [cron-job.org](https://cron-job.org).** It is genuinely free with no paid tier, which is why
-it was chosen over UptimeRobot: UptimeRobot's only way to restrict hours is its *"maintenance window"*
-feature, and that is **paid-only**.
+**The tool is [cron-job.org](https://cron-job.org), at `console.cron-job.org`.** It is genuinely free with
+no paid tier, which is why it was chosen over UptimeRobot: UptimeRobot's only way to restrict hours is its
+*"maintenance window"* feature, and that is **paid-only**.
+
+**Render's own Cron Jobs were evaluated and rejected.** They look like the obvious answer — same dashboard,
+no third-party account — but Render's documentation states each cron service carries a *"minimum monthly
+charge of \$1 per cron job service"*, and it runs on its own billed compute. A paid product cannot keep a
+free-tier link warm. Recorded here because it is the first place anyone would look.
+
+**Note the name clash, which caused real confusion once already:** `dashboard.render.com/cron/new` is Render's
+paid cron service. `console.cron-job.org` is the free third-party pinger this deployment uses. They are
+unrelated companies.
 
 **Setup:** one HTTP job, method `GET`, URL `https://saas-revenue-analytics.onrender.com/`, executed
 **every 5 minutes** inside the window. Five minutes is deliberate — three times more frequent than Render's
